@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Organigramme SPA</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/admin-lte@3.2/dist/css/adminlte.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+</head>
+<body class="hold-transition sidebar-mini layout-fixed">
+<div class="wrapper">
+  <!-- Navbar -->
+  <nav class="main-header navbar navbar-expand navbar-white navbar-light">
+    <ul class="navbar-nav ml-auto">
+      <li class="nav-item">
+        <a href="login.html" class="nav-link">Déconnexion</a>
+      </li>
+    </ul>
+  </nav>
+
+  <!-- Sidebar -->
+  <aside class="main-sidebar sidebar-dark-primary elevation-4">
+    <a href="#" class="brand-link">
+      <span class="brand-text font-weight-light">Organigramme</span>
+    </a>
+    <div class="sidebar">
+      <nav class="mt-2">
+        <ul class="nav nav-pills nav-sidebar flex-column" id="menu">
+          <li class="nav-item">
+            <a href="#diagramme" class="nav-link">
+              <i class="nav-icon fas fa-sitemap"></i>
+              <p>Diagramme</p>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a href="#ok" class="nav-link">
+              <i class="nav-icon fas fa-check-circle"></i>
+              <p>OK</p>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a href="#ascendant" class="nav-link">
+              <i class="nav-icon fas fa-arrow-up"></i>
+              <p>Ascendant</p>
+            </a>
+          </li>
+        </ul>
+      </nav>
+    </div>
+  </aside>
+
+  <!-- Content -->
+  <div class="content-wrapper">
+    <section class="content pt-3 px-3" id="main-content">
+      <p>Bienvenue dans l'organigramme familial. Sélectionnez un onglet à gauche.</p>
+    </section>
+  </div>
+</div>
+
+<script>
+  function loadContent(page) {
+  console.log('-------->', `partials/${page}.html`);
+  fetch(`partials/${page}.html?${Date.now()}`)
+    .then(res => {
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+      return res.text();
+    })
+    .then(html => {
+      document.getElementById('main-content').innerHTML = html;
+      document.querySelectorAll('#menu .nav-link').forEach(link => link.classList.remove('active'));
+      const activeLink = document.querySelector(`#menu a[href="#${page}"]`);
+      if (activeLink) activeLink.classList.add('active');
+    })
+    .catch(err => {
+      console.error('Erreur lors du chargement:', err);
+    });
+}
+
+  window.addEventListener('hashchange', () => {
+    const page = window.location.hash.slice(1) || 'diagramme';
+    
+    loadContent(page);
+  });
+
+  // Charger la première page par défaut
+  window.addEventListener('load', () => {
+    const initialPage = window.location.hash.slice(1) || 'diagramme';
+    loadContent(initialPage);
+  });
+</script>
+</body>
+</html>

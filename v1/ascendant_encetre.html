@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Tetiharana – Ascendant</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #f4f6f8;
+      margin: 0;
+      padding: 0;
+    }
+
+    header {
+      color: #8A2BE2 !important; 
+      font-weight: bold; 
+      padding: 10px;
+      text-align: center;
+      font-size: 1.5em;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+      background: linear-gradient(135deg, #FFB800, #FFD700) !important;
+    }
+
+    main {
+      display: flex;
+      height: calc(100vh - 80px);
+    }
+
+    aside {
+      width: 300px;
+      background: #ffffff;
+      border-right: 1px solid #ddd;
+      padding: 20px;
+      box-shadow: 4px 0 10px rgba(0,0,0,0.05);
+      overflow-y: auto;
+    }
+
+    aside h3 {
+      margin-top: 0;
+      color: #333;
+    }
+
+    #descendantList {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 15px;
+    }
+
+    .descendant-card {
+      background: #f1f1f1;
+      border: 1px solid #ccc;
+      border-radius: 10px;
+      padding: 10px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    }
+
+    .descendant-card:hover {
+      background: #007bff;
+      color: white;
+      transform: translateX(5px);
+    }
+
+    #tree-container {
+      flex-grow: 1;
+      overflow: auto;
+      position: relative;
+      background: #ffffff;
+    }
+
+    svg {
+      display: block;
+      width: 100%;
+    }
+
+    input[type="file"] {
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <header>Tetiharana – Ascendant</header>
+  
+  <main>
+    <div class="container mt-4" style="padding: 20px;">
+      <div class="mb-3">
+        <label for="fileInput" class="form-label"><strong>Fichier Excel :</strong></label>
+        <input type="file" id="fileInput" class="form-control" accept=".xlsx, .xls" />
+      </div>
+
+      <div class="mb-4">
+        <label for="descendantList" class="form-label"><strong>Choisissez un descendant :</strong></label>
+        <div id="descendantList" class="form-control" style="height:auto; min-height:40px;"></div>
+      </div>
+
+      <div id="tree-container">
+        <svg id="tree" width="1800" height="1000" viewBox="0 0 1800 1000" preserveAspectRatio="xMidYMin meet"></svg>
+      </div>
+    </div>
+  </main>
+<script>
+  // Déclaration de la fonction avant son appel
+  function initializeAscendantTree() {
+    // Implémenter ici ce que tu veux faire pour initialiser l'arbre
+    // Par exemple, afficher la liste des descendants ou préparer l'arbre d'ascendants
+    showDescendantOptions(); // Appelle ta fonction existante pour afficher les descendants
+  }
+
+  let allNodes = new Map();
+  let childToParents = new Map(); // gère plusieurs parents
+  let currentPath = [];
+
+  document.getElementById('fileInput').addEventListener('change', function (e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function (event) {
+      const data = new Uint8Array(event.target.result);
+      const workbook = XLSX.read(data, { type: 'array' });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const json = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+
+      buildNodeMap(json);
+      initializeAscendantTree(); // Assure que la fonction est appelée après son initialisation
+    };
+    reader.readAsArrayBuffer(file);
+  });
+
+  function buildNodeMap(data) {
+    allNodes.clear();
+    childToParents.clear();
+
+    data.forEach(row => {
+      const id = String(row.ID).trim();
+      const parentRaw = String(row.Parent || "").trim();
+      const parentIds = parentRaw.split(",").map(p => p.trim()).filter(Boolean);
+      const name = `${row.Prenom || ""} ${row.Nom || ""}`.trim();
+
+      allNodes.set(id, { id, name, originalRow: row });
+
+      if (parentIds.length) {
+        childToParents.set(id, parentIds);
+      }
+    });
+  }
+
+  function showDescendantOptions() {
+    const container = document.getElementById('descendantList');
+    container.innerHTML = "";
+
+    const allParentIds = new Set([...childToParents.values()].flat());
+    const descendants = [...allNodes.entries()].filter(([id]) => !allParentIds.has(id));
+
+    descendants.forEach(([id, person]) => {
+      const btn = document.createElement('div');
+      btn.className = 'descendant-card';
+      btn.textContent = person.name;
+
+      btn.onclick = () => {
+        currentPath = [id];
+        drawTree(buildTreeFromPath());
+      };
+
+      container.appendChild(btn);
+    });
+  }
+
+  function addNextAncestor() {
+    const lastId = currentPath.at(-1);
+    const parents = childToParents.get(lastId) || [];
+
+    parents.forEach(parentId => {
+      if (!currentPath.includes(parentId) && allNodes.has(parentId)) {
+        currentPath.push(parentId);
+      }
+    });
+
+    drawTree(buildTreeFromPath());
+  }
+
+  function buildTreeFromPath() {
+    function buildSubTree(nodeId) {
+      const node = {
+        id: nodeId,
+        name: allNodes.get(nodeId).name,
+        children: []
+      };
+      const parents = childToParents.get(nodeId) || [];
+      node.children = parents.map(pid => buildSubTree(pid));
+      return node;
+    }
+
+    return buildSubTree(currentPath[0]);
+  }
+
+  function drawTree(data) {
+    const root = d3.hierarchy(data);
+    const svg = d3.select("#tree");
+    svg.selectAll("*").remove();
+
+    const dx = 500;
+    const dy = 160;
+    const treeLayout = d3.tree().nodeSize([dx, dy]);
+    treeLayout(root);
+
+    const maxDepth = d3.max(root.descendants(), d => d.depth);
+    const totalHeight = (maxDepth + 2) * dy;
+    svg.attr("viewBox", `0 0 1000 ${totalHeight}`);
+
+    const g = svg.append("g")
+      .attr("transform", `translate(500, 50)`);
+
+    g.append("g")
+      .attr("fill", "none")
+      .attr("stroke", "#aaa")
+      .attr("stroke-width", 2)
+      .selectAll("path")
+      .data(root.links())
+      .join("path")
+      .attr("d", d3.linkVertical()
+        .x(d => d.x)
+        .y(d => d.y));
+
+    const node = g.append("g")
+      .selectAll("g")
+      .data(root.descendants())
+      .join("g")
+      .attr("transform", d => `translate(${d.x},${d.y})`);
+
+    node.append("rect")
+  .attr("x", -150) // ← centre le rect
+  .attr("y", -30)
+  .attr("width", 450)
+  .attr("height", 60)
+  .attr("rx", 15)
+  .attr("fill", "#8A2BE2")
+  .attr("stroke", "#FFD700")
+  .attr("stroke-width", 2)
+  .attr("opacity", 0)
+  .transition()
+  .duration(600)
+  .attr("opacity", 1);
+
+node.append("text")
+  .attr("x", 0) // ← position horizontale centrée
+  .attr("text-anchor", "middle")
+  .attr("dy", "0.35em")
+  .style("fill", "white")
+  .style("font-size", "18px")
+  .style("font-weight", "bold")
+  .text(d => d.data.name)
+  .attr("opacity", 0)
+  .transition()
+  .duration(600)
+  .attr("opacity", 1);
+
+
+    const lastNode = root.descendants().at(-1);
+    node.filter(d => d === lastNode)
+      .style("cursor", "pointer")
+      .on("click", addNextAncestor);
+  }
+</script>
+
+</body>
+</html>

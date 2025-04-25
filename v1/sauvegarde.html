@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Organigramme SPA</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/admin-lte@3.2/dist/css/adminlte.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <style>
+    :root {
+      --primary-color: #4B0082;
+      --secondary-color: #6a11cb;
+      --accent-color: #ff9966;
+    }
+    svg {
+      border: 1px solid #ccc;
+      background-color: white;
+    }
+    .node rect {
+      rx: 10;
+      ry: 10;
+      cursor: pointer;
+    }
+    .node text, .node-label {
+      font-size: 11px;
+      fill: white;
+    }
+    .link {
+      fill: none;
+      stroke: #ccc;
+      stroke-width: 2px;
+    }
+  </style>
+</head>
+<body class="hold-transition sidebar-mini layout-fixed">
+<div class="wrapper">
+
+  <!-- Navbar -->
+  <nav class="main-header navbar navbar-expand navbar-white navbar-light">
+    <ul class="navbar-nav ml-auto">
+      <li class="nav-item">
+        <a href="login.html" class="nav-link"><i class="fas fa-sign-out-alt"></i> Déconnexion</a>
+      </li>
+    </ul>
+  </nav>
+
+  <!-- Sidebar -->
+  <aside class="main-sidebar sidebar-dark-primary elevation-4">
+    <a href="#" class="brand-link text-center">
+      <span class="brand-text font-weight-light">Organigramme</span>
+    </a>
+    <div class="sidebar">
+      <nav class="mt-2">
+        <ul class="nav nav-pills nav-sidebar flex-column">
+          <li class="nav-item">
+            <a href="#diagramme" class="nav-link">
+              <i class="nav-icon fas fa-sitemap"></i>
+              <p>Diagramme</p>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a href="#ok" class="nav-link">
+              <i class="nav-icon fas fa-check-circle"></i>
+              <p>OK</p>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a href="#ascendant" class="nav-link">
+              <i class="nav-icon fas fa-arrow-up"></i>
+              <p>Ascendant</p>
+            </a>
+          </li>
+        </ul>
+      </nav>
+    </div>
+  </aside>
+
+  <!-- Content Wrapper -->
+  <div class="content-wrapper">
+    <section class="content pt-3 px-3" id="main-content">
+      <p>Bienvenue dans l'organigramme familial. Sélectionnez un onglet à gauche.</p>
+    </section>
+  </div>
+
+</div>
+
+<!-- Scripts -->
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.0/xlsx.full.min.js"></script>
+<script>
+  window.addEventListener('DOMContentLoaded', () => {
+    function loadContent(page) {
+      if (page === 'diagramme') {
+        document.getElementById('main-content').innerHTML = `
+          <div class="mb-3">
+            <label for="fileInput" class="form-label"><strong>Fichier Excel :</strong></label>
+            <input type="file" id="fileInput" class="form-control" accept=".xlsx,.xls" />
+          </div>
+          <svg width="1800" height="1000"></svg>
+        `;
+        initDiagramme();
+      } else if (page === 'ok') {
+        fetch('ok.html')
+          .then(res => res.text())
+          .then(html => document.getElementById('main-content').innerHTML = html);
+      }
+      else if (page === 'ascendant') {
+        fetch('ascendant_encetre.html')
+          .then(res => res.text())
+          .then(html => document.getElementById('main-content').innerHTML = html);
+      }
+    }
+
+    function initDiagramme() {
+      const svg = d3.select("svg"), width = +svg.attr("width"), height = +svg.attr("height");
+      const tree = d3.tree().size([height, width - 300]);
+      const duration = 750;
+      let i = 0, root;
+
+      document.getElementById("fileInput").addEventListener("change", function (event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function (e) {
+          const workbook = XLSX.read(e.target.result, { type: 'binary' });
+          const rows = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 });
+          root = d3.hierarchy(processExcelData(rows));
+          root.x0 = height / 2;
+          root.y0 = 0;
+          root.children.forEach(collapse);
+          update(root);
+        };
+        reader.readAsBinaryString(file);
+      });
+
+      function processExcelData(rows) {
+        const nodes = {}, data = { name: "", children: [] };
+        rows.forEach(([id, nom, prenom, , contact, parentId, generation, situation, descendant]) => {
+          if (!id || !nom) return;
+          const fullName = prenom ? `${nom} ${prenom}` : nom;
+          nodes[id] = { name: fullName, contact, parentId, generation, situation, descendant, children: [] };
+        });
+        Object.values(nodes).forEach(node => {
+          if (nodes[node.parentId]) nodes[node.parentId].children.push(node);
+          else data.children.push(node);
+        });
+        return data;
+      }
+
+      function collapse(d) {
+        if (d.children) {
+          d._children = d.children;
+          d._children.forEach(collapse);
+          d.children = null;
+        }
+      }
+
+      function update(source) {
+        const treeData = tree(root);
+        const nodes = treeData.descendants();
+        const links = treeData.links();
+        nodes.forEach(d => d.y = d.depth * 200);
+
+        const node = svg.selectAll('g.node')
+          .data(nodes, d => d.id || (d.id = ++i));
+
+        const nodeEnter = node.enter().append('g')
+          .attr('class', 'node')
+          .attr("transform", d => `translate(${source.y0},${source.x0})`)
+          .on('click', (e, d) => {
+            d.children = d.children ? null : d._children;
+            update(d);
+          });
+
+        nodeEnter.append("rect")
+          .attr("x", -60).attr("y", -30).attr("width", 150).attr("height", 60)
+          .attr("fill", d => ["#4B0082", "#4682B4", "#5F9EA0", "#87CEEB", "#ff9966", "#E9D502"][d.depth] || "#75dcdc");
+
+        nodeEnter.append("image")
+          .attr("href", d => {
+            const sit = d.data.situation;
+            return sit === "F" ? "images/avatar_f.png" :
+                   sit === "H" ? "images/avatar_h.png" :
+                   "images/avatar.png";
+          })
+          .attr("x", 50).attr("y", -50).attr("width", 50).attr("height", 50);
+
+        nodeEnter.filter(d => d.data.descendant > 0)
+          .append("g")
+          .attr("class", "plus-button")
+          .attr("transform", "translate(50, 5)")
+          .on("click", (e, d) => console.log("Bouton + cliqué pour", d.data.name))
+          .call(g => {
+            g.append("rect")
+              .attr("x", 20).attr("y", 15).attr("width", 25).attr("height", 20)
+              .attr("rx", 5).attr("ry", 5)
+              .attr("fill", d => ["#4B0082", "#4682B4", "#5F9EA0", "#87CEEB", "#ff9966", "#E9D502"][d.depth] || "#75dcdc");
+            g.append("text")
+              .text(d => d.data.descendant)
+              .attr("x", 35).attr("y", 27)
+              .attr("text-anchor", "middle")
+              .attr("font-size", "16px")
+              .attr("fill", "white");
+          });
+
+        const textGroup = nodeEnter.append("text")
+          .attr("x", 60).attr("y", 0).attr("class", "node-label").attr("text-anchor", "end");
+        textGroup.append("tspan").attr("x", 60).attr("dy", "-0.4em").text(d => d.data.name);
+        textGroup.append("tspan").attr("x", 60).attr("dy", "1.2em").attr("font-size", "10px").text(d => d.data.contact || "");
+
+        const nodeUpdate = nodeEnter.merge(node);
+        nodeUpdate.transition().duration(duration).attr("transform", d => `translate(${d.y},${d.x})`);
+        node.exit().transition().duration(duration).attr("transform", d => `translate(${source.y},${source.x})`).remove();
+
+        const link = svg.selectAll('path.link')
+          .data(links, d => d.target.id);
+        const diagonal = (s, d) => `M ${s.y} ${s.x} C ${(s.y + d.y)/2} ${s.x}, ${(s.y + d.y)/2} ${d.x}, ${d.y} ${d.x}`;
+
+        link.enter().insert('path', "g")
+          .attr("class", "link")
+          .attr('d', d => diagonal({ x: source.x0, y: source.y0 }, { x: source.x0, y: source.y0 }))
+          .merge(link)
+          .transition().duration(duration)
+          .attr('d', d => diagonal(d.source, d.target));
+        link.exit().transition().duration(duration)
+          .attr('d', d => diagonal({ x: source.x, y: source.y }, { x: source.x, y: source.y }))
+          .remove();
+
+        nodes.forEach(d => { d.x0 = d.x; d.y0 = d.y; });
+      }
+    }
+
+    // Navigation entre pages SPA
+    window.addEventListener("hashchange", () => {
+      const page = location.hash.substring(1);
+      loadContent(page);
+    });
+
+    // Chargement initial
+    const initialPage = location.hash.substring(1) || 'diagramme';
+    loadContent(initialPage);
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Tetiharana  – Ascendant</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #f4f6f8;
+      margin: 0;
+      padding: 0;
+    }
+
+    header {
+      background: #007bff;
+      color: white;
+      padding: 20px;
+      text-align: center;
+      font-size: 1.5em;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+
+    main {
+      display: flex;
+      height: calc(100vh - 80px);
+    }
+
+    aside {
+      width: 300px;
+      background: #ffffff;
+      border-right: 1px solid #ddd;
+      padding: 20px;
+      box-shadow: 4px 0 10px rgba(0,0,0,0.05);
+      overflow-y: auto;
+    }
+
+    aside h3 {
+      margin-top: 0;
+      color: #333;
+    }
+
+    #descendantList {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 15px;
+    }
+
+    .descendant-card {
+      background: #f1f1f1;
+      border: 1px solid #ccc;
+      border-radius: 10px;
+      padding: 10px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    }
+
+    .descendant-card:hover {
+      background: #007bff;
+      color: white;
+      transform: translateX(5px);
+    }
+
+    #tree-container {
+      flex-grow: 1;
+      overflow: auto;
+      position: relative;
+      background: #ffffff;
+    }
+
+    svg {
+      display: block;
+      width: 100%;
+    }
+
+    input[type="file"] {
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+ 
+  <main>
+    <aside>
+      <h4>Charger un fichier Excel</h4>
+      <input type="file" id="upload" accept=".xlsx, .xls" />
+      <div style="margin-top: 20px;"><strong>Choisissez un descendant :</strong></div>
+      <div id="descendantList"></div>
+    </aside>
+    <div id="tree-container">
+      <svg id="tree" viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMin meet"></svg>
+    </div>
+  </main>
+
+  <script>
+    let allNodes = new Map();
+    let childToParent = new Map();
+    let currentPath = [];
+
+    document.getElementById('upload').addEventListener('change', function (e) {
+      console.log("***********ICI************");
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function (event) {
+        const data = new Uint8Array(event.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const json = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+
+        
+
+        buildNodeMap(json);
+        showDescendantOptions();
+      };
+      reader.readAsArrayBuffer(file);
+    });
+
+    function buildNodeMap(data) {
+      allNodes.clear();
+      childToParent.clear();
+
+      data.forEach(row => {
+        const id = String(row.ID).trim();
+        const parentId = String(row.Parent).trim();
+        const name = `${row.Prenom || ""} ${row.Nom || ""}`.trim();
+
+        allNodes.set(id, { id, name, originalRow: row });
+
+        if (parentId && parentId !== "0" && parentId !== id) {
+          childToParent.set(id, parentId);
+        }
+      });
+    }
+
+    function showDescendantOptions() {
+      const container = document.getElementById('descendantList');
+      container.innerHTML = "";
+
+      const childrenIds = new Set([...childToParent.values()]);
+      const descendants = [...allNodes.entries()]
+        .filter(([id]) => !childrenIds.has(id));
+
+      descendants.forEach(([id, person]) => {
+        const btn = document.createElement('div');
+        btn.className = 'descendant-card';
+        btn.textContent = person.name;
+        btn.onclick = () => {
+          currentPath = [id];
+          drawTree(buildTreeFromPath());
+        };
+        container.appendChild(btn);
+      });
+    }
+
+    function addNextAncestor() {
+      const lastId = currentPath[currentPath.length - 1];
+      const parentId = childToParent.get(lastId);
+      if (parentId && allNodes.has(parentId)) {
+        currentPath.push(parentId);
+        drawTree(buildTreeFromPath());
+      }
+    }
+
+    function buildTreeFromPath() {
+      let tree = null;
+      for (let i = currentPath.length - 1; i >= 0; i--) {
+        const id = currentPath[i];
+        const node = {
+          id,
+          name: allNodes.get(id).name,
+          children: tree ? [tree] : []
+        };
+        tree = node;
+      }
+      return tree;
+    }
+
+    function drawTree(data) {
+      const root = d3.hierarchy(data);
+      const svg = d3.select("#tree");
+      svg.selectAll("*").remove();
+
+      const dx = 100;
+      const dy = 160;
+      const treeLayout = d3.tree().nodeSize([dx, dy]);
+      treeLayout(root);
+
+      // Dynamically resize SVG viewBox height
+      const maxDepth = d3.max(root.descendants(), d => d.depth);
+      const totalHeight = (maxDepth + 2) * dy;
+      svg.attr("viewBox", `0 0 1000 ${totalHeight}`);
+
+      const g = svg.append("g")
+        .attr("transform", `translate(500, 50)`);
+
+      g.append("g")
+        .attr("fill", "none")
+        .attr("stroke", "#aaa")
+        .attr("stroke-width", 2)
+        .selectAll("path")
+        .data(root.links())
+        .join("path")
+        .attr("d", d3.linkVertical()
+          .x(d => d.x)
+          .y(d => d.y));
+
+      const node = g.append("g")
+        .selectAll("g")
+        .data(root.descendants())
+        .join("g")
+        .attr("transform", d => `translate(${d.x},${d.y})`);
+
+      node.append("rect")
+        .attr("x", -60)
+        .attr("y", -30)
+        .attr("width", 120)
+        .attr("height", 60)
+        .attr("rx", 15)
+        .attr("fill", "#4faaff")
+        .attr("stroke", "#0077cc")
+        .attr("stroke-width", 2)
+        .attr("opacity", 0)
+        .transition()
+        .duration(600)
+        .attr("opacity", 1);
+
+      node.append("text")
+        .attr("text-anchor", "middle")
+        .attr("dy", "0.35em")
+        .style("fill", "white")
+        .style("font-size", "14px")
+        .text(d => d.data.name)
+        .attr("opacity", 0)
+        .transition()
+        .duration(600)
+        .attr("opacity", 1);
+
+      const lastNode = root.descendants().at(-1);
+      node.filter(d => d === lastNode)
+        .style("cursor", "pointer")
+        .on("click", addNextAncestor);
+    }
+  </script>
+</body>
+</html>
